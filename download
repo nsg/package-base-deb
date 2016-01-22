@@ -1,0 +1,86 @@
+#!/bin/bash
+
+set -e
+
+serr() {
+	echo -e $@ >&2
+}
+
+help() {
+	serr "Usage: $0 -w/c <url> -t <target path> -h <hash> [-x]"
+	serr "\t-w Url to download from (wget is used)"
+	serr "\t-c Url to download from (curl is used)"
+	serr "\t-t path to download to"
+	serr "\t-h specify hash to check agains"
+	serr "\t-x specify to extract the file to <target path>"
+	exit 1
+}
+
+[ $# -lt 1 ] && help
+
+while getopts ":w:c:t:h:x" opt; do
+	case $opt in
+		x)
+			DO_EXTRACT=1
+			;;
+		t)
+			TARGET_PATH="${OPTARG}"
+			;;
+		h)
+			case ${#OPTARG} in
+				32)
+					HASH_CMD="md5sum"
+					;;
+				40)
+					HASH_CMD="sha1sum"
+					;;
+				64)
+					HASH_CMD="sha256sum"
+					;;
+				*)
+					help
+					;;
+			esac
+			HASH="${OPTARG}"
+			;;
+		w)
+			DOWNLOAD_CMD="wget -O"
+			DOWNLOAD_URL="${OPTARG}"
+			;;
+		c)
+			DOWNLOAD_CMD="curl -o"
+			DOWNLOAD_URL="${OPTARG}"
+			;;
+		\?)
+			help
+			;;
+	esac
+done
+
+if [ ! $TARGET_PATH ] || [ ! $HASH ] || [ ! $DOWNLOAD_URL ]; then
+	help
+fi
+
+echo "Download $DOWNLOAD_URL to $TARGET_PATH"
+$DOWNLOAD_CMD $TARGET_PATH $DOWNLOAD_URL
+
+echo "Check hash ($HASH_CMD)"
+echo "$HASH  $TARGET_PATH" | $HASH_CMD -c -
+
+if [ $DO_EXTRACT ]; then
+	(
+		cd $(dirname $TARGET_PATH)
+		echo "Extract in $PWD"
+		case $(file $TARGET_PATH) in
+			*gzip* | *bz*)
+				tar xf $TARGET_PATH
+				;;
+			*zip*)
+				unzip $TARGET_PATH
+				;;
+			*)
+				serr "Format not supported, sorry"
+				exit 2
+		esac
+	)
+fi
